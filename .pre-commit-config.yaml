@@ -176,6 +176,7 @@ repos:
         exclude: |
           (?x)^(
             core/math/bvh_.*\.inc|
+            modules/voxel/.*|
             platform/(?!android|ios|linuxbsd|macos|web|windows)\w+/.*|
             platform/android/java/lib/src/main/java/org/godotengine/godot/gl/GLSurfaceView\.java|
             platform/android/java/lib/src/main/java/org/godotengine/godot/gl/EGLLogWrapper\.java|
@@ -222,3 +223,9 @@ repos:
 #     - id: new-local-hook
 # To add external repo hooks, bring the indentation back to:
 # - repo: my-remote-hook
+
+      - id: competent-voxels-headers
+        name: competent-voxels-headers
+        language: python
+        entry: python misc/scripts/competent_voxels_headers.py
+        files: ^modules/voxel/.*\.(c|h|cpp|hpp|cc|hh|cxx|hxx|inc)$

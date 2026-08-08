@@ -292,3 +292,16 @@
 *.py                                          @godotengine/buildsystem
 SConstruct                                    @godotengine/buildsystem
 SCsub                                         @godotengine/buildsystem
+
+#
+# End of upstream Godot codeowners.
+#
+# Keep this separation to let downstream forks add their own entries below,
+# without running into merge conflicts when rebasing on latest upstream.
+# Lower entries have higher precedence, so these override the catch-alls above.
+#
+# Start of downstream codeowners.
+#
+
+/misc/scripts/competent_voxels_headers.py     @Astral-Chains
+/modules/voxel/                               @Astral-Chains
