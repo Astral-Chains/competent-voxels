@@ -1669,6 +1669,9 @@
 		<member name="TranslationServer" type="TranslationServer" setter="" getter="">
 			The [TranslationServer] singleton.
 		</member>
+		<member name="VoxelServer" type="VoxelServer" setter="" getter="">
+			The [VoxelServer] singleton.
+		</member>
 		<member name="WorkerThreadPool" type="WorkerThreadPool" setter="" getter="">
 			The [WorkerThreadPool] singleton.
 		</member>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelServer" inherits="Object" api_type="core" keywords="sdf, volume, sculpt" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Low-level owner of all sparse signed distance field voxel data.
+	</brief_description>
+	<description>
+		VoxelServer holds every voxel field in the engine behind an opaque [RID], in the same way that [RenderingServer] holds meshes and textures. It is the only place voxel data actually lives; every other voxel class is a handle to it.
+		Most code should not use this class directly. Prefer the resource and node layers built on top of it, which manage the server's [RID]s automatically and integrate with the scene tree, the inspector, and resource saving.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_field_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of voxel fields the server currently owns. Useful for leak checks, since a field that is never freed keeps its memory for the lifetime of the process.
+			</description>
+		</method>
+	</methods>
+</class>
