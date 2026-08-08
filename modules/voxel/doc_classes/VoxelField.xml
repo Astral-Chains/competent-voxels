@@ -79,8 +79,17 @@
 		</method>
 		<method name="get_collision_faces" qualifiers="const">
 			<return type="PackedVector3Array" />
+			<param index="0" name="step" type="int" default="-1" />
 			<description>
-				Returns the field's surface as loose triangles, three vertices per face, extracted at the coarser resolution set by [method set_collision_step]. This is what [VoxelShape3D] feeds to the physics engine, and it is deliberately not the rendered mesh: collision does not need to see a millimeter of detail, and paying for it is the difference between a stamp that keeps frame rate and one that does not.
+				Returns the field's surface as loose triangles, three vertices per face, extracted at a coarser resolution than the field is drawn at. This is what [VoxelShape3D] feeds to the physics engine, and it is deliberately not the rendered mesh: collision does not need to see a millimeter of detail, and paying for it is the difference between a stamp that keeps frame rate and one that does not.
+				[param step] is how many voxels wide one collision cell is, or [code]-1[/code] to use [method get_collision_step]. Passing it reads at that resolution without changing the field, so a caller with its own idea of how coarse collision should be does not impose it on everything else sharing the field.
+				Only one resolution is cached, so alternating between two of them re-extracts every call.
+			</description>
+		</method>
+		<method name="get_collision_step" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many voxels wide one collision cell is by default. See [method set_collision_step].
 			</description>
 		</method>
 		<method name="get_mesh_rid" qualifiers="const">
@@ -143,8 +152,8 @@
 			<return type="void" />
 			<param index="0" name="step" type="int" />
 			<description>
-				Sets how many voxels wide one collision cell is, so [code]4[/code] extracts collision at a quarter of the rendered resolution. Larger values cost less to extract and less for physics to test, at the price of collision that rounds off detail the eye can still see.
-				Defaults to [member ProjectSettings.voxel/collision/voxel_multiplier].
+				Sets how many voxels wide one collision cell is by default, so [code]4[/code] extracts collision at a quarter of the rendered resolution. Larger values cost less to extract and less for physics to test, at the price of collision that rounds off detail the eye can still see.
+				This is only the default for [method get_collision_faces]; a caller passing its own step is unaffected. Defaults to [member ProjectSettings.voxel/collision/voxel_multiplier].
 			</description>
 		</method>
 		<method name="stamp">

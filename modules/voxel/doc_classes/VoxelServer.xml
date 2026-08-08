@@ -88,8 +88,16 @@
 		<method name="field_get_collision_faces">
 			<return type="PackedVector3Array" />
 			<param index="0" name="field" type="RID" />
+			<param index="1" name="step" type="int" default="-1" />
 			<description>
-				Returns the field's surface as loose triangles at the resolution set by [method field_set_collision_step]. See [method VoxelField.get_collision_faces].
+				Returns the field's surface as loose triangles at a coarser resolution than it is drawn at. [param step] is how many voxels wide one collision cell is, or [code]-1[/code] for the field's own. See [method VoxelField.get_collision_faces].
+			</description>
+		</method>
+		<method name="field_get_collision_step" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Returns how many voxels wide one collision cell is by default for this field.
 			</description>
 		</method>
 		<method name="field_get_mesh">
@@ -165,7 +173,7 @@
 			<param index="0" name="field" type="RID" />
 			<param index="1" name="step" type="int" />
 			<description>
-				Sets how many voxels wide one collision cell is. See [method VoxelField.set_collision_step].
+				Sets how many voxels wide one collision cell is by default for this field. See [method VoxelField.set_collision_step].
 			</description>
 		</method>
 		<method name="field_set_mesher">

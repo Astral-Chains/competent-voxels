@@ -112,7 +112,11 @@ public:
 	int get_triangle_count() const;
 
 	void set_collision_step(int p_step);
-	Vector<Vector3> get_collision_faces() const;
+	int get_collision_step() const;
+	// A step of -1 means the field's own. Passing one reads at that resolution
+	// without changing the field, so a caller with its own idea of how coarse
+	// collision should be does not impose it on everything else sharing the field.
+	Vector<Vector3> get_collision_faces(int p_step = -1) const;
 
 	TypedArray<Dictionary> find_islands();
 	Ref<VoxelField> extract_island(int p_island_index, bool p_remove_from_source = false);

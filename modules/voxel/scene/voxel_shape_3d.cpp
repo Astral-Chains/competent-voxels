@@ -77,8 +77,10 @@ void VoxelShape3D::_rebuild_faces() {
 	if (field.is_null()) {
 		faces.clear();
 	} else {
-		field->set_collision_step(voxel_multiplier);
-		faces = field->get_collision_faces();
+		// Asked for, not set. Writing the resolution into the field would make the
+		// field announce a change, which arrives back here as another rebuild, and
+		// would also mean two shapes sharing a field overwrite each other's choice.
+		faces = field->get_collision_faces(voxel_multiplier);
 	}
 	_update_shape();
 	emit_changed();

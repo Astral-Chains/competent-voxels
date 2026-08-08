@@ -542,8 +542,9 @@ void VoxelServer::_rebuild_mesh(Field *p_field) {
 	}
 }
 
-void VoxelServer::_rebuild_collision(Field *p_field) {
+void VoxelServer::_rebuild_collision(Field *p_field, int p_step) {
 	p_field->collision_dirty = false;
+	p_field->collision_faces_step = p_step;
 	p_field->collision_faces.clear();
 
 	if (p_field->mesher.is_null() || !p_field->storage.is_configured()) {
@@ -557,7 +558,7 @@ void VoxelServer::_rebuild_collision(Field *p_field) {
 	VoxelMesher::Input input;
 	input.cell_origin = Vector3i();
 	input.cell_size = p_field->storage.get_cell_resolution();
-	input.step = MAX(p_field->collision_step, 1);
+	input.step = MAX(p_step, 1);
 	input.with_channels = false;
 
 	VoxelMesher::Output output;
@@ -612,13 +613,25 @@ void VoxelServer::field_set_collision_step(RID p_field, int p_step) {
 	field->collision_dirty = true;
 }
 
-Vector<Vector3> VoxelServer::field_get_collision_faces(RID p_field) {
+int VoxelServer::field_get_collision_step(RID p_field) const {
+	MutexLock lock(mutex);
+	const Field *field = field_owner.get_or_null(p_field);
+	ERR_FAIL_NULL_V(field, 0);
+	return field->collision_step;
+}
+
+Vector<Vector3> VoxelServer::field_get_collision_faces(RID p_field, int p_step) {
 	MutexLock lock(mutex);
 	Field *field = field_owner.get_or_null(p_field);
 	ERR_FAIL_NULL_V(field, Vector<Vector3>());
 	ERR_FAIL_COND_V(_configure_if_needed(field) != OK, Vector<Vector3>());
-	if (field->collision_dirty) {
-		_rebuild_collision(field);
+
+	const int step = p_step > 0 ? p_step : MAX(field->collision_step, 1);
+	// Only one resolution is cached, so alternating between two of them re-extracts
+	// every time. That is the honest cost of letting a caller choose, and it beats
+	// the alternative of one caller's choice silently becoming everyone's.
+	if (field->collision_dirty || field->collision_faces_step != step) {
+		_rebuild_collision(field, step);
 	}
 	return field->collision_faces;
 }
@@ -937,7 +950,8 @@ void VoxelServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("field_get_triangle_count", "field"), &VoxelServer::field_get_triangle_count);
 
 	ClassDB::bind_method(D_METHOD("field_set_collision_step", "field", "step"), &VoxelServer::field_set_collision_step);
-	ClassDB::bind_method(D_METHOD("field_get_collision_faces", "field"), &VoxelServer::field_get_collision_faces);
+	ClassDB::bind_method(D_METHOD("field_get_collision_step", "field"), &VoxelServer::field_get_collision_step);
+	ClassDB::bind_method(D_METHOD("field_get_collision_faces", "field", "step"), &VoxelServer::field_get_collision_faces, DEFVAL(-1));
 
 	ClassDB::bind_method(D_METHOD("field_find_islands", "field"), &VoxelServer::field_find_islands);
 	ClassDB::bind_method(D_METHOD("field_extract_island", "field", "island_index", "remove_from_source"), &VoxelServer::field_extract_island, DEFVAL(false));

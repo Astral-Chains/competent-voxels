@@ -191,4 +191,39 @@ TEST_CASE("[Voxel] Collision faces are coarser than the rendered surface") {
 	CHECK(coarse < fine);
 }
 
+TEST_CASE("[Voxel] A collision resolution can be asked for without imposing it") {
+	Ref<VoxelField> field = make_field();
+	field->stamp(make_sphere(0.15f), Transform3D(), VoxelField::OP_UNION);
+	field->set_collision_step(4);
+
+	// Two callers wanting different resolutions from one field is the case that
+	// breaks if reading collision writes to the field, because whichever asked last
+	// would decide for both.
+	const int fine = field->get_collision_faces(1).size();
+	const int coarse = field->get_collision_faces(4).size();
+	REQUIRE(fine > 0);
+	CHECK(coarse < fine);
+	CHECK(field->get_collision_step() == 4);
+	CHECK(field->get_collision_faces().size() == coarse);
+}
+
+TEST_CASE("[Voxel] Setting the collision step to what it already is announces nothing") {
+	Ref<VoxelField> field = make_field();
+	field->stamp(make_sphere(0.15f), Transform3D(), VoxelField::OP_UNION);
+	field->set_collision_step(4);
+
+	// A listener that rebuilds itself from the field on a change, and touches the
+	// field while rebuilding, recurses forever if the field announces a change that
+	// did not happen. That is not a hypothetical: it is what VoxelShape3D does.
+	SIGNAL_WATCH(field.ptr(), SNAME("changed"));
+
+	field->set_collision_step(4);
+	SIGNAL_CHECK_FALSE("changed");
+
+	field->set_collision_step(2);
+	SIGNAL_CHECK("changed", { {} });
+
+	SIGNAL_UNWATCH(field.ptr(), SNAME("changed"));
+}
+
 } // namespace TestVoxelField

@@ -157,12 +157,23 @@ int VoxelField::get_triangle_count() const {
 }
 
 void VoxelField::set_collision_step(int p_step) {
-	VoxelServer::get_singleton()->field_set_collision_step(field, p_step);
-	emit_changed();
+	VoxelServer *server = VoxelServer::get_singleton();
+	const int before = server->field_get_collision_step(field);
+	server->field_set_collision_step(field, p_step);
+	// Only on a real change. Anything listening to a field rebuilds itself when told,
+	// and a listener that reads the field back during that rebuild would otherwise
+	// announce a change that never happened, forever.
+	if (server->field_get_collision_step(field) != before) {
+		emit_changed();
+	}
 }
 
-Vector<Vector3> VoxelField::get_collision_faces() const {
-	return VoxelServer::get_singleton()->field_get_collision_faces(field);
+int VoxelField::get_collision_step() const {
+	return VoxelServer::get_singleton()->field_get_collision_step(field);
+}
+
+Vector<Vector3> VoxelField::get_collision_faces(int p_step) const {
+	return VoxelServer::get_singleton()->field_get_collision_faces(field, p_step);
 }
 
 TypedArray<Dictionary> VoxelField::find_islands() {
@@ -211,7 +222,8 @@ void VoxelField::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_triangle_count"), &VoxelField::get_triangle_count);
 
 	ClassDB::bind_method(D_METHOD("set_collision_step", "step"), &VoxelField::set_collision_step);
-	ClassDB::bind_method(D_METHOD("get_collision_faces"), &VoxelField::get_collision_faces);
+	ClassDB::bind_method(D_METHOD("get_collision_step"), &VoxelField::get_collision_step);
+	ClassDB::bind_method(D_METHOD("get_collision_faces", "step"), &VoxelField::get_collision_faces, DEFVAL(-1));
 
 	ClassDB::bind_method(D_METHOD("find_islands"), &VoxelField::find_islands);
 	ClassDB::bind_method(D_METHOD("extract_island", "island_index", "remove_from_source"), &VoxelField::extract_island, DEFVAL(false));

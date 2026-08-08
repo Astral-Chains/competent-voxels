@@ -97,7 +97,12 @@ private:
 		bool mesh_dirty = true;
 		uint32_t triangle_count = 0;
 
+		// The default resolution collision is extracted at when a caller does not ask
+		// for one. collision_faces_step records what the cache was actually built at,
+		// so a caller asking for a different resolution gets that resolution instead
+		// of silently getting whatever the last caller wanted.
 		int collision_step = 4;
+		int collision_faces_step = 0;
 		bool collision_dirty = true;
 		Vector<Vector3> collision_faces;
 	};
@@ -127,7 +132,7 @@ private:
 	void _stamp_once(Field *p_field, const Ref<VoxelBrush> &p_brush, const Transform3D &p_transform, VoxelOperation p_operation);
 	void _remesh(Field *p_field);
 	void _rebuild_mesh(Field *p_field);
-	void _rebuild_collision(Field *p_field);
+	void _rebuild_collision(Field *p_field, int p_step);
 
 	static void _extract_chunk_task(void *p_userdata, uint32_t p_index);
 
@@ -175,7 +180,11 @@ public:
 	int field_get_triangle_count(RID p_field);
 
 	void field_set_collision_step(RID p_field, int p_step);
-	Vector<Vector3> field_get_collision_faces(RID p_field);
+	int field_get_collision_step(RID p_field) const;
+	// A step of -1 means the field's own. Passing one explicitly reads at that
+	// resolution without writing anything to the field, which is what lets two
+	// collision shapes share a field without fighting over its settings.
+	Vector<Vector3> field_get_collision_faces(RID p_field, int p_step = -1);
 
 	// Connectivity. Islands come back as descriptors, and extraction produces a new
 	// field RID rather than a mesh, so that a chip knocked off a workpiece and a
