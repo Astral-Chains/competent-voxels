@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelBrushCapsule" inherits="VoxelBrush" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A capsule-shaped brush: a cylinder with hemispherical ends.
+	</brief_description>
+	<description>
+		A [VoxelBrushCapsule] cuts and fills a capsule aligned to the brush's local Y axis and centered on its origin. It is the brush for a groove or a channel, since one stamp already covers a length rather than a point.
+		Give it a rotated [Transform3D] to lay the groove along any direction. Setting [member height] to zero leaves a sphere.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="height" type="float" setter="set_height" getter="get_height" default="0.2">
+			The total length of the capsule along its local Y axis, including both hemispherical ends. Values below twice [member radius] are clamped there, which is the point at which the capsule is a sphere.
+		</member>
+		<member name="radius" type="float" setter="set_radius" getter="get_radius" default="0.05">
+			The radius of the cylinder and of both end caps, in the same units as the field it is stamped into. This is the width of the groove the brush leaves.
+		</member>
+	</members>
+</class>

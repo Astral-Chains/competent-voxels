@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelBrush" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Base class for the shapes that add to and cut into a [VoxelField].
+	</brief_description>
+	<description>
+		A [VoxelBrush] is the shape of a single edit. Pass one to [method VoxelField.stamp] with a transform and an operation, and the field combines the brush's shape with what it already holds.
+		A brush is a shape and nothing more: it does not know which field it will be used on, has no position of its own, and can be reused across any number of fields and stamps. That is what lets a tool be built once and dragged over anything.
+		This class is abstract. Use [VoxelBrushSphere], [VoxelBrushCapsule], [VoxelBrushBox], or [VoxelBrushMesh].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_extent" qualifiers="const">
+			<return type="float" />
+			<description>
+				Returns the radius of a sphere at the brush's origin that contains everything the brush can affect. A field uses this to work out which region a stamp needs to touch, which is why the cost of a stamp follows the size of the brush rather than the size of the field.
+			</description>
+		</method>
+		<method name="get_stroke_spacing" qualifiers="const">
+			<return type="float" />
+			<description>
+				Returns how far apart [method VoxelField.stamp_path] places this brush along a path so the stroke comes out continuous. Derived from the brush's own shape, so a caller passing a path never has to work the spacing out.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="falloff" type="Curve" setter="set_falloff" getter="get_falloff">
+			Remaps the brush's effect from its center to its edge, sampled from [code]0.0[/code] at the center to [code]1.0[/code] at the surface. Without a curve the brush is uniform and cuts a hard edge; with one it can be made to bite deepest in the middle and taper away.
+		</member>
+		<member name="material_id" type="int" setter="set_material_id" getter="get_material_id" default="1">
+			The material this brush writes where it adds or paints material. Each ID present in a field becomes one surface on the extracted mesh, so this is the number that decides which [Material] a region is drawn with.
+			[code]0[/code] is reserved for the material exposed by cutting into a solid, so a brush that puts material down should use [code]1[/code] or above. Ignored by [constant VoxelField.OP_SUBTRACT], which removes material rather than writing any.
+		</member>
+		<member name="strength" type="float" setter="set_strength" getter="get_strength" default="1.0">
+			Scales how much of the brush a single stamp applies, from [code]0.0[/code] for nothing to [code]1.0[/code] for the brush's full shape. Below [code]1.0[/code] a stamp takes a shallow bite, so repeated passes cut in gradually the way a real tool does.
+		</member>
+	</members>
+</class>

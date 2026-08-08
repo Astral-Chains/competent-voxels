@@ -1,0 +1,30 @@
+; Headless benchmark for the voxel module. Run from the repository root with:
+;
+;   bin/godot --headless --path modules/voxel/benchmark
+;
+; It replays a fixed synthetic workload and prints the server's monitors, so the
+; numbers from two builds can be diffed directly. A debug build is roughly twice as
+; slow as a release one here, so only compare runs of the same build type; the
+; BASELINE line says which it was. Nothing here enters the engine build:
+; modules/voxel/SCsub globs source per explicit subdirectory and not this one.
+
+config_version=5
+
+[application]
+
+config/name="Voxel Benchmark"
+config/description="Fixed synthetic sculpting workload for the voxel module."
+run/main_scene="res://benchmark.tscn"
+config/features=PackedStringArray("4.7")
+
+[debug]
+
+settings/stdout/verbose_stdout=false
+
+[rendering]
+
+renderer/rendering_method="mobile"
+
+[voxel]
+
+collision/voxel_multiplier=4

@@ -229,3 +229,12 @@ repos:
         language: python
         entry: python misc/scripts/competent_voxels_headers.py
         files: ^modules/voxel/.*\.(c|h|cpp|hpp|cc|hh|cxx|hxx|inc)$
+
+      - id: voxel-domain-neutrality
+        name: voxel-domain-neutrality
+        language: python
+        entry: python misc/scripts/voxel_domain_neutrality.py
+        files: ^modules/voxel/.*\.(c|h|cpp|hpp|cc|hh|cxx|hxx|inc|py|gd|xml|md)$
+        # This test checks the same rule against ClassDB at runtime, so it has to
+        # hold the words the rule forbids.
+        exclude: ^modules/voxel/tests/test_voxel_invariants\.h$

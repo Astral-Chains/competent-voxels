@@ -8,3 +8,7 @@ env_voxel = env_modules.Clone()
 
 # Godot source files
 env_voxel.add_source_files(env.modules_sources, "*.cpp")
+env_voxel.add_source_files(env.modules_sources, "field/*.cpp")
+env_voxel.add_source_files(env.modules_sources, "mesher/*.cpp")
+env_voxel.add_source_files(env.modules_sources, "ops/*.cpp")
+env_voxel.add_source_files(env.modules_sources, "scene/*.cpp")

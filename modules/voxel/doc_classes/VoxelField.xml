@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelField" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A signed distance field that can be carved, and the mesh extracted from it.
+	</brief_description>
+	<description>
+		A [VoxelField] stores a solid as the signed distance to its surface, sampled on a grid. Negative samples are inside the solid, positive samples are outside, and the surface is where the samples cross zero. Storing a solid this way means arbitrary shapes can be added and removed from it with no regard for what was there before, which is what a mesh cannot do.
+		Shapes are added and removed by stamping a [VoxelBrush], and the field re-extracts a mesh from the regions the stamp touched. Attach the field to a [VoxelVolume3D] to see that mesh in a scene.
+		All positions passed to a field are in the field's own space, never the world's. A [VoxelVolume3D] applies its own transform on top, so moving the node does not move anything inside the field.
+		The field itself is only a handle. The data lives in [VoxelServer], and the resource frees it when the resource is freed.
+		[codeblock]
+		var field := VoxelField.new()
+		field.bounds = AABB(Vector3(-0.5, -0.5, -0.5), Vector3.ONE)
+		field.voxel_size = 0.01
+
+		var block := VoxelBrushBox.new()
+		block.size = Vector3(0.6, 0.2, 0.4)
+		field.stamp(block, Transform3D(), VoxelField.OP_UNION)
+
+		var hole := VoxelBrushSphere.new()
+		hole.radius = 0.05
+		field.stamp(hole, Transform3D(Basis(), Vector3(0.1, 0, 0)), VoxelField.OP_SUBTRACT)
+		[/codeblock]
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="add_channel">
+			<return type="int" />
+			<param index="0" name="name" type="StringName" />
+			<param index="1" name="format" type="int" enum="VoxelField.ChannelFormat" />
+			<description>
+				Adds a channel of per-sample data alongside the distance field, and returns its index. A channel is interpolated and carried onto the extracted mesh the same way the distance is, so it can be read in a shader as a vertex attribute.
+				The [code]&amp;"material_id"[/code] channel always exists and does not need to be added. Adding a channel that already exists returns the existing index rather than a duplicate.
+				Channels can only be added before the field has been stamped into. Memory cost is the sample count times the format's size, so a channel is never free.
+			</description>
+		</method>
+		<method name="clear">
+			<return type="void" />
+			<description>
+				Empties the field, leaving [member bounds] and [member voxel_size] as they were. Every sample returns to fully outside the solid and the extracted mesh becomes empty.
+			</description>
+		</method>
+		<method name="extract_island">
+			<return type="VoxelField" />
+			<param index="0" name="island_index" type="int" />
+			<param index="1" name="remove_from_source" type="bool" default="false" />
+			<description>
+				Returns one of the disconnected pieces reported by [method find_islands] as a new [VoxelField] of its own, tightly bounded around the piece and sharing this field's [member voxel_size] and channels.
+				The result is a field rather than a mesh, so the piece can go on being carved after it comes off. With [param remove_from_source] the piece is also erased from this field, which is how a cut that separates something is completed: extract the piece, remove it, and give each half to its own [VoxelVolume3D].
+				[param island_index] indexes into the array [method find_islands] returned, and that array is invalidated by any stamp.
+			</description>
+		</method>
+		<method name="find_channel" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Returns the index of the channel with this name, or [code]-1[/code] if the field has no such channel.
+			</description>
+		</method>
+		<method name="find_islands">
+			<return type="Dictionary[]" />
+			<description>
+				Returns one dictionary per disconnected piece of solid in the field, each with an [code]index[/code], an [code]aabb[/code] in field space, and a [code]volume[/code] in cubic units. Pieces are ordered largest first, so the body an object was cut from is index [code]0[/code] and what came off it follows.
+				A field that has been carved in two reports two pieces without being asked to; call this after a stamp that might have separated something, and pass an index to [method extract_island] to take that piece off.
+			</description>
+		</method>
+		<method name="get_cell_resolution" qualifiers="const">
+			<return type="Vector3i" />
+			<description>
+				Returns how many cells the field spans on each axis, which is [member bounds] divided by [member voxel_size] and rounded up. This is one less than the number of samples per axis, since a cell sits between samples.
+			</description>
+		</method>
+		<method name="get_channel_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of channels, counting the [code]&amp;"material_id"[/code] channel that always exists.
+			</description>
+		</method>
+		<method name="get_collision_faces" qualifiers="const">
+			<return type="PackedVector3Array" />
+			<description>
+				Returns the field's surface as loose triangles, three vertices per face, extracted at the coarser resolution set by [method set_collision_step]. This is what [VoxelShape3D] feeds to the physics engine, and it is deliberately not the rendered mesh: collision does not need to see a millimeter of detail, and paying for it is the difference between a stamp that keeps frame rate and one that does not.
+			</description>
+		</method>
+		<method name="get_mesh_rid" qualifiers="const">
+			<return type="RID" />
+			<description>
+				Returns the [RenderingServer] mesh the field extracts into. The RID is stable for the life of the field, so it can be handed to [method RenderingServer.instance_set_base] once and left alone while the contents change under it.
+			</description>
+		</method>
+		<method name="get_surface_arrays" qualifiers="const">
+			<return type="Array" />
+			<param index="0" name="surface" type="int" />
+			<description>
+				Returns the arrays of one extracted surface, in the layout [method ArrayMesh.add_surface_from_arrays] takes. Vertices are in field space, and [constant Mesh.ARRAY_CUSTOM0] carries the field's channels.
+				This copies the surface out of the renderer, so it is for inspection and export rather than for something to do every frame.
+			</description>
+		</method>
+		<method name="get_surface_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many surfaces the extracted mesh has. There is one surface per material ID present in the field, so a solid carved to expose a second material grows a second surface on its own, and each can be given its own [Material] through [method VoxelVolume3D.set_surface_override_material].
+			</description>
+		</method>
+		<method name="get_triangle_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of triangles across every surface of the extracted mesh.
+			</description>
+		</method>
+		<method name="get_volume" qualifiers="const">
+			<return type="float" />
+			<description>
+				Returns the volume of solid in the field, in cubic units, measured from the samples rather than from the extracted mesh. Comparing this before and after a stamp is how much material the stamp removed.
+			</description>
+		</method>
+		<method name="has_channel" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Returns [code]true[/code] if the field has a channel with this name.
+			</description>
+		</method>
+		<method name="raycast" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="from" type="Vector3" />
+			<param index="1" name="direction" type="Vector3" />
+			<param index="2" name="max_distance" type="float" />
+			<description>
+				Casts a ray through the distance field and returns a dictionary with [code]position[/code], [code]normal[/code], and [code]material_id[/code] at the first surface crossing, or an empty dictionary if the ray misses.
+				[param from] and [param direction] are in field space. This reads the field directly rather than the extracted mesh, so it hits the surface as the field defines it and works without any collision set up.
+			</description>
+		</method>
+		<method name="sample" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="local_position" type="Vector3" />
+			<description>
+				Returns the signed distance to the surface at a point in field space, interpolated between samples. Negative is inside the solid, positive is outside, and the magnitude is roughly how far away the surface is.
+			</description>
+		</method>
+		<method name="set_collision_step">
+			<return type="void" />
+			<param index="0" name="step" type="int" />
+			<description>
+				Sets how many voxels wide one collision cell is, so [code]4[/code] extracts collision at a quarter of the rendered resolution. Larger values cost less to extract and less for physics to test, at the price of collision that rounds off detail the eye can still see.
+				Defaults to [member ProjectSettings.voxel/collision/voxel_multiplier].
+			</description>
+		</method>
+		<method name="stamp">
+			<return type="void" />
+			<param index="0" name="brush" type="VoxelBrush" />
+			<param index="1" name="transform" type="Transform3D" />
+			<param index="2" name="operation" type="int" enum="VoxelField.Operation" />
+			<description>
+				Applies [param brush] to the field at [param transform], combining it with what is already there according to [param operation]. The transform is in field space and may rotate and translate freely; the brush is sampled through its inverse, so an oriented cut costs what an axis-aligned one costs.
+				Only the region the brush reaches is touched, and only that region is re-extracted, so the cost of a stamp follows the size of the brush and not the size of the field.
+			</description>
+		</method>
+		<method name="stamp_path">
+			<return type="void" />
+			<param index="0" name="brush" type="VoxelBrush" />
+			<param index="1" name="path" type="PackedVector3Array" />
+			<param index="2" name="operation" type="int" enum="VoxelField.Operation" />
+			<description>
+				Drags [param brush] along a polyline in field space, applying it repeatedly to leave a continuous stroke rather than a row of separate marks. Spacing is chosen from the brush's own extent, so a caller passing raw input samples gets a gapless cut without having to work out how densely to step.
+				The whole path is one re-extraction, which is why a stroke should be passed as a path rather than as a loop of [method stamp] calls.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="bounds" type="AABB" setter="set_bounds" getter="get_bounds" default="AABB(0, 0, 0, 1, 1, 1)">
+			The region of field space the field covers. Nothing outside it can be carved, so this is the block of material an object starts as, sized in the same units as the scene.
+			Changing this reallocates and empties the field. Combined with [member voxel_size] it fixes the sample count, and that count is what the field costs in memory.
+		</member>
+		<member name="mesher" type="VoxelMesher" setter="set_mesher" getter="get_mesher">
+			The algorithm that turns samples into triangles. Defaults to a [VoxelMesherMarchingCubes]. Assigning a different mesher re-extracts the whole field with it, so the choice is not baked in at creation.
+		</member>
+		<member name="voxel_size" type="float" setter="set_voxel_size" getter="get_voxel_size" default="0.01">
+			The distance between samples, in the same units as the scene. This is the finest detail the field can hold: nothing narrower than a voxel survives being stored.
+			Halving it multiplies both memory and extraction cost by eight, so this is the single most expensive number in the class. Changing it reallocates and empties the field.
+		</member>
+	</members>
+	<signals>
+		<signal name="bounds_changed">
+			<description>
+				Emitted when [member bounds] or [member voxel_size] changes and the field is reallocated. Anything holding onto positions or island indices from before should discard them.
+			</description>
+		</signal>
+		<signal name="islands_found">
+			<param index="0" name="islands" type="Array" />
+			<description>
+				Emitted by [method find_islands] with the pieces it found, so a cut that separates something can be reacted to without polling for it.
+			</description>
+		</signal>
+	</signals>
+	<constants>
+		<constant name="FORMAT_UINT8" value="0" enum="ChannelFormat">
+			One byte per sample, read back as the integer that was written. For channels holding an ID rather than a quantity.
+		</constant>
+		<constant name="FORMAT_UNORM8" value="1" enum="ChannelFormat">
+			One byte per sample, read back as a value from [code]0.0[/code] to [code]1.0[/code]. The cheapest way to store a quantity, and enough for anything a shader will only ever blend.
+		</constant>
+		<constant name="FORMAT_UNORM16" value="2" enum="ChannelFormat">
+			Two bytes per sample, read back as a value from [code]0.0[/code] to [code]1.0[/code]. For quantities where 256 steps show as banding.
+		</constant>
+		<constant name="FORMAT_FLOAT32" value="3" enum="ChannelFormat">
+			Four bytes per sample, stored as a float with no range limit. Four times the cost of [constant FORMAT_UNORM8], and worth it only for a channel that genuinely leaves [code]0.0[/code] to [code]1.0[/code].
+		</constant>
+		<constant name="OP_UNION" value="0" enum="Operation">
+			Adds the brush to the field, and paints the brush's material where it added anything. This is how material is put down.
+		</constant>
+		<constant name="OP_SUBTRACT" value="1" enum="Operation">
+			Removes the brush from the field. This is the cut, and it is the operation an object being carved spends nearly all its life in.
+		</constant>
+		<constant name="OP_INTERSECT" value="2" enum="Operation">
+			Keeps only what lies inside both the brush and the field, discarding the rest. Trims a solid down to a shape rather than carving into it.
+		</constant>
+		<constant name="OP_SMOOTH" value="3" enum="Operation">
+			Averages the field towards its neighbors inside the brush, rounding sharp detail off without adding or removing a shape. Repeated application keeps softening.
+		</constant>
+		<constant name="OP_PAINT" value="4" enum="Operation">
+			Writes the brush's material where the brush overlaps existing solid, and leaves the surface exactly where it was. Changes what a region is made of without changing its shape.
+		</constant>
+	</constants>
+</class>

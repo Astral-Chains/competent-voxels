@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelBrushSphere" inherits="VoxelBrush" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A spherical brush.
+	</brief_description>
+	<description>
+		A [VoxelBrushSphere] cuts and fills a sphere centered on the brush's origin. It is the simplest and cheapest brush, and the one to reach for first: rotation cannot change it, its falloff is even in every direction, and dragged along a path it leaves a round-bottomed channel.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="radius" type="float" setter="set_radius" getter="get_radius" default="0.05">
+			The radius of the sphere, in the same units as the field it is stamped into. A radius below the field's [member VoxelField.voxel_size] cannot cut a hole the field is able to store.
+		</member>
+	</members>
+</class>

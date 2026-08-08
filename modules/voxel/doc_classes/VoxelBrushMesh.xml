@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelBrushMesh" inherits="VoxelBrush" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A brush shaped like an arbitrary [Mesh].
+	</brief_description>
+	<description>
+		A [VoxelBrushMesh] takes any [Mesh] and uses it as the shape of an edit, so a tool that is not a sphere, a capsule, or a box does not need a new brush class written for it. Model the tool, assign it, and stamp with it.
+		The mesh is converted to a distance field the first time the brush is used, at [member resolution] samples across its longest axis. That conversion is not cheap, so it is done once and kept; assigning a different mesh or resolution throws it away and it happens again on the next stamp.
+		The mesh should be closed. An open mesh has no well-defined inside, and the brush will guess at one.
+		[codeblock]
+		var brush := VoxelBrushMesh.new()
+		brush.mesh = load("res://tool_tip.obj")
+		brush.resolution = 64
+		field.stamp_path(brush, stroke, VoxelField.OP_SUBTRACT)
+		[/codeblock]
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="is_baked" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if the mesh has already been converted to a distance field, so the next stamp will not pay for the conversion. Useful for doing that work at load time rather than on the frame a player first cuts.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="mesh" type="Mesh" setter="set_mesh" getter="get_mesh">
+			The mesh whose shape the brush takes. Its own origin is the brush's origin, so where it sits relative to that origin is where it will sit relative to the transform a stamp is given.
+			Assigning discards any previous conversion.
+		</member>
+		<member name="padding" type="float" setter="set_padding" getter="get_padding" default="0.1">
+			How far past the mesh's bounding box the distance field extends, as a fraction of the box. Some margin is needed for the field to fall off smoothly outside the shape; too little makes the brush's outer edge abrupt, and too much spends samples on empty space.
+		</member>
+		<member name="resolution" type="int" setter="set_resolution" getter="get_resolution" default="32">
+			How many samples the converted distance field uses across the mesh's longest axis. This caps the detail the brush can cut: features of the mesh finer than one sample are lost in the conversion.
+			Cost grows with the cube of this, and it is paid once per mesh. Assigning discards any previous conversion.
+		</member>
+	</members>
+</class>

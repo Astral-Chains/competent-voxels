@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelBrushBox" inherits="VoxelBrush" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A box-shaped brush, optionally with rounded corners.
+	</brief_description>
+	<description>
+		A [VoxelBrushBox] cuts and fills a rectangular block centered on the brush's origin. It is the brush for flat faces and square-cornered recesses, and with [member corner_radius] it becomes the rounded block that a blunt tool leaves.
+		Give it a rotated [Transform3D] and the cut is rotated with it. The box has no preferred orientation of its own.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="corner_radius" type="float" setter="set_corner_radius" getter="get_corner_radius" default="0.0">
+			How far the box's edges and corners are rounded off. At [code]0.0[/code] the box is sharp; raised to half the smallest component of [member size] it becomes as round as the box can get. Values above that are clamped.
+		</member>
+		<member name="size" type="Vector3" setter="set_size" getter="get_size" default="Vector3(0.1, 0.1, 0.1)">
+			The full width, height, and depth of the box, in the same units as the field it is stamped into. The box is centered on the brush's origin, so each component reaches half its length either side.
+		</member>
+	</members>
+</class>

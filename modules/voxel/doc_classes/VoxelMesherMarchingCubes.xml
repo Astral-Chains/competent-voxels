@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelMesherMarchingCubes" inherits="VoxelMesher" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Extracts a [VoxelField] into triangles with marching cubes.
+	</brief_description>
+	<description>
+		Marching cubes walks the field one cell at a time, and for each cell places triangles according to which of its eight corners are inside the solid. Where the surface crosses a cell edge is found by interpolating between the two corner samples, so the result follows the surface more closely than the grid it was sampled on.
+		This is the default mesher, and the one to use unless there is a specific reason not to. The surface it produces is always closed, which is what collision and volume measurement depend on. It does round off sharp creases: a corner is reconstructed as the grid saw it, so an edge finer than a voxel comes out slightly bevelled.
+		Extraction runs on [WorkerThreadPool] across the regions a stamp touched, and output is grouped so that each material ID present in the field becomes one surface on the mesh.
+	</description>
+	<tutorials>
+	</tutorials>
+</class>

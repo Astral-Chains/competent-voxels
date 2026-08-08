@@ -3541,6 +3541,24 @@
 		<member name="threading/worker_pool/max_threads" type="int" setter="" getter="" default="-1">
 			Maximum number of threads to be used by [WorkerThreadPool]. On Web, a value of [code]-1[/code] means [code]1[/code]. On other platforms, it means all [i]logical[/i] CPU cores available (see [method OS.get_processor_count]).
 		</member>
+		<member name="voxel/collision/voxel_multiplier" type="int" setter="" getter="" default="4">
+			Default number of voxels per collision cell for new voxel fields, so [code]4[/code] builds collision at a quarter of the resolution a field is drawn at. Raising it makes edits cheaper and physics faster while letting collision round off detail that remains visible.
+			Overridable per object through [member VoxelVolume3D.collision_voxel_multiplier].
+		</member>
+		<member name="voxel/debug/draw_brick_bounds" type="bool" setter="" getter="" default="false">
+			If [code]true[/code], voxel fields draw the outlines of the regions they store data in, which is how to see what a single edit actually touched.
+			[b]Note:[/b] Accepted and stored, but nothing reads it yet.
+		</member>
+		<member name="voxel/extraction/algorithm" type="int" setter="" getter="" default="0">
+			Which algorithm new voxel fields extract their mesh with. Overridable per field through [member VoxelField.mesher], which is the better place to change it for one object.
+		</member>
+		<member name="voxel/lod/screen_error_pixels" type="float" setter="" getter="" default="2.0">
+			Default for [member VoxelVolume3D.lod_screen_error_pixels]: how far, in pixels on screen, a lower detail level may deviate from the full-resolution surface before a volume refuses it.
+			[b]Note:[/b] Accepted and stored, but nothing reads it yet; volumes always draw at full resolution.
+		</member>
+		<member name="voxel/threads/worker_count" type="int" setter="" getter="" default="0">
+			How many threads voxel extraction may use. [code]0[/code] lets [WorkerThreadPool] decide, which is almost always the right answer; lower it only to leave cores free for something that needs them more.
+		</member>
 		<member name="xr/openxr/binding_modifiers/analog_threshold" type="bool" setter="" getter="" default="false">
 			If [code]true[/code], enables the analog threshold binding modifier if supported by the XR runtime.
 		</member>

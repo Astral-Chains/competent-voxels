@@ -6,15 +6,267 @@
 	<description>
 		VoxelServer holds every voxel field in the engine behind an opaque [RID], in the same way that [RenderingServer] holds meshes and textures. It is the only place voxel data actually lives; every other voxel class is a handle to it.
 		Most code should not use this class directly. Prefer the resource and node layers built on top of it, which manage the server's [RID]s automatically and integrate with the scene tree, the inspector, and resource saving.
+		Every method here takes the [RID] of the field it acts on, and every position is in that field's own space. Fields are independent of one another: there is no current field, no global grid, and nothing that one field can do to another.
 	</description>
 	<tutorials>
 	</tutorials>
 	<methods>
+		<method name="field_add_channel">
+			<return type="int" />
+			<param index="0" name="field" type="RID" />
+			<param index="1" name="name" type="StringName" />
+			<param index="2" name="format" type="int" enum="VoxelServer.ChannelFormat" />
+			<description>
+				Adds a channel of per-sample data to the field and returns its index, or the existing index if a channel of that name is already present. See [method VoxelField.add_channel].
+			</description>
+		</method>
+		<method name="field_clear">
+			<return type="void" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Empties the field without changing its bounds or voxel size.
+			</description>
+		</method>
+		<method name="field_create">
+			<return type="RID" />
+			<description>
+				Creates an empty field and returns its [RID]. The field must be freed with [method field_free]; nothing else will do it. Storage is not allocated until the field is first stamped into, so a created field costs almost nothing until it is used.
+			</description>
+		</method>
+		<method name="field_extract_island">
+			<return type="RID" />
+			<param index="0" name="field" type="RID" />
+			<param index="1" name="island_index" type="int" />
+			<param index="2" name="remove_from_source" type="bool" default="false" />
+			<description>
+				Copies one disconnected piece of the field into a new field and returns its [RID], optionally erasing the piece from the source. The caller owns the returned field and must free it. See [method VoxelField.extract_island].
+			</description>
+		</method>
+		<method name="field_find_channel" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="field" type="RID" />
+			<param index="1" name="name" type="StringName" />
+			<description>
+				Returns the index of the named channel, or [code]-1[/code] if the field has no such channel.
+			</description>
+		</method>
+		<method name="field_find_islands">
+			<return type="Dictionary[]" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Returns one dictionary per disconnected piece of solid in the field, largest first. See [method VoxelField.find_islands].
+			</description>
+		</method>
+		<method name="field_free">
+			<return type="void" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Frees a field and everything it owns, including the mesh [method field_get_mesh] returned. Any [RID] held for that mesh becomes invalid.
+			</description>
+		</method>
+		<method name="field_get_bounds" qualifiers="const">
+			<return type="AABB" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Returns the region of field space the field covers.
+			</description>
+		</method>
+		<method name="field_get_cell_resolution" qualifiers="const">
+			<return type="Vector3i" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Returns how many cells the field spans on each axis.
+			</description>
+		</method>
+		<method name="field_get_channel_count" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Returns the number of channels, counting the material ID channel that always exists.
+			</description>
+		</method>
+		<method name="field_get_collision_faces">
+			<return type="PackedVector3Array" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Returns the field's surface as loose triangles at the resolution set by [method field_set_collision_step]. See [method VoxelField.get_collision_faces].
+			</description>
+		</method>
+		<method name="field_get_mesh">
+			<return type="RID" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Returns the [RenderingServer] mesh the field extracts into, re-extracting first if the field has changed since the last call. The [RID] is stable for the life of the field, so it can be given to [method RenderingServer.instance_set_base] once and left alone.
+			</description>
+		</method>
+		<method name="field_get_mesher" qualifiers="const">
+			<return type="VoxelMesher" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Returns the mesher this field extracts with.
+			</description>
+		</method>
+		<method name="field_get_triangle_count">
+			<return type="int" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Returns the number of triangles across every surface of the field's extracted mesh.
+			</description>
+		</method>
+		<method name="field_get_volume" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Returns the volume of solid in the field, in cubic units, measured from the samples rather than from the extracted mesh.
+			</description>
+		</method>
+		<method name="field_get_voxel_size" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Returns the distance between the field's samples.
+			</description>
+		</method>
+		<method name="field_is_valid" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="field" type="RID" />
+			<description>
+				Returns [code]true[/code] if this [RID] refers to a field the server still owns.
+			</description>
+		</method>
+		<method name="field_raycast" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="field" type="RID" />
+			<param index="1" name="from" type="Vector3" />
+			<param index="2" name="direction" type="Vector3" />
+			<param index="3" name="max_distance" type="float" />
+			<description>
+				Casts a ray through the field and returns where it first meets the surface, or an empty dictionary if it misses. See [method VoxelField.raycast].
+			</description>
+		</method>
+		<method name="field_sample" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="field" type="RID" />
+			<param index="1" name="local_position" type="Vector3" />
+			<description>
+				Returns the interpolated signed distance to the surface at a point in field space. Negative is inside the solid.
+			</description>
+		</method>
+		<method name="field_set_bounds">
+			<return type="void" />
+			<param index="0" name="field" type="RID" />
+			<param index="1" name="bounds" type="AABB" />
+			<description>
+				Sets the region of field space the field covers, reallocating and emptying it.
+			</description>
+		</method>
+		<method name="field_set_collision_step">
+			<return type="void" />
+			<param index="0" name="field" type="RID" />
+			<param index="1" name="step" type="int" />
+			<description>
+				Sets how many voxels wide one collision cell is. See [method VoxelField.set_collision_step].
+			</description>
+		</method>
+		<method name="field_set_mesher">
+			<return type="void" />
+			<param index="0" name="field" type="RID" />
+			<param index="1" name="mesher" type="VoxelMesher" />
+			<description>
+				Sets the mesher the field extracts with, and marks the whole field for re-extraction.
+			</description>
+		</method>
+		<method name="field_set_voxel_size">
+			<return type="void" />
+			<param index="0" name="field" type="RID" />
+			<param index="1" name="voxel_size" type="float" />
+			<description>
+				Sets the distance between samples, reallocating and emptying the field. This is what the field costs, so it is the number to change when memory or extraction time has to come down.
+			</description>
+		</method>
+		<method name="field_stamp">
+			<return type="void" />
+			<param index="0" name="field" type="RID" />
+			<param index="1" name="brush" type="VoxelBrush" />
+			<param index="2" name="transform" type="Transform3D" />
+			<param index="3" name="operation" type="int" enum="VoxelServer.Operation" />
+			<description>
+				Applies a brush to the field at a transform in field space. Only the region the brush reaches is touched and only that region is marked for re-extraction. See [method VoxelField.stamp].
+			</description>
+		</method>
+		<method name="field_stamp_path">
+			<return type="void" />
+			<param index="0" name="field" type="RID" />
+			<param index="1" name="brush" type="VoxelBrush" />
+			<param index="2" name="path" type="PackedVector3Array" />
+			<param index="3" name="operation" type="int" enum="VoxelServer.Operation" />
+			<description>
+				Drags a brush along a polyline in field space, spacing it from the brush's own extent so the stroke comes out continuous. See [method VoxelField.stamp_path].
+			</description>
+		</method>
 		<method name="get_field_count" qualifiers="const">
 			<return type="int" />
 			<description>
 				Returns the number of voxel fields the server currently owns. Useful for leak checks, since a field that is never freed keeps its memory for the lifetime of the process.
 			</description>
 		</method>
+		<method name="get_monitor" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="monitor" type="int" enum="VoxelServer.Monitor" />
+			<description>
+				Returns the current value of one of the server's counters. The same values are published to the editor's monitors tab under [code]voxel/[/code], so this is for reading them from a running project rather than for finding out what they are.
+			</description>
+		</method>
 	</methods>
+	<constants>
+		<constant name="FORMAT_UINT8" value="0" enum="ChannelFormat">
+			One byte per sample, read back as the integer that was written.
+		</constant>
+		<constant name="FORMAT_UNORM8" value="1" enum="ChannelFormat">
+			One byte per sample, read back as a value from [code]0.0[/code] to [code]1.0[/code].
+		</constant>
+		<constant name="FORMAT_UNORM16" value="2" enum="ChannelFormat">
+			Two bytes per sample, read back as a value from [code]0.0[/code] to [code]1.0[/code].
+		</constant>
+		<constant name="FORMAT_FLOAT32" value="3" enum="ChannelFormat">
+			Four bytes per sample, stored as a float with no range limit.
+		</constant>
+		<constant name="OP_UNION" value="0" enum="Operation">
+			Adds the brush to the field and paints its material where it added anything.
+		</constant>
+		<constant name="OP_SUBTRACT" value="1" enum="Operation">
+			Removes the brush from the field.
+		</constant>
+		<constant name="OP_INTERSECT" value="2" enum="Operation">
+			Keeps only what lies inside both the brush and the field.
+		</constant>
+		<constant name="OP_SMOOTH" value="3" enum="Operation">
+			Averages the field towards its neighbors inside the brush, without adding or removing a shape.
+		</constant>
+		<constant name="OP_PAINT" value="4" enum="Operation">
+			Writes the brush's material where the brush overlaps existing solid, leaving the surface where it was.
+		</constant>
+		<constant name="MONITOR_FIELD_COUNT" value="0" enum="Monitor">
+			How many fields the server owns. Published as [code]voxel/field_count[/code].
+		</constant>
+		<constant name="MONITOR_DIRTY_CHUNKS" value="1" enum="Monitor">
+			How many regions are waiting to be re-extracted, across every field. Published as [code]voxel/chunks_dirty[/code].
+			This is a backlog rather than a total, so it drops to zero as soon as something asks for a mesh. Read it straight after a stamp to see how much of the field that stamp invalidated; a number close to the whole field means a stamp is touching far more than its brush covers.
+		</constant>
+		<constant name="MONITOR_CPU_BYTES" value="2" enum="Monitor">
+			How much memory every field's samples and channels take together, in bytes. Published as [code]voxel/cpu_bytes[/code].
+		</constant>
+		<constant name="MONITOR_STAMP_USEC" value="3" enum="Monitor">
+			How long the last stamp took to apply to the samples, in microseconds, not counting re-extraction. Published as [code]voxel/stamp_usec[/code].
+		</constant>
+		<constant name="MONITOR_EXTRACT_USEC" value="4" enum="Monitor">
+			How long the last re-extraction took, in microseconds, counting both the meshing of the changed regions and the rebuilding of the mesh from them. Published as [code]voxel/extract_usec[/code]. This is normally the larger half of the cost of a stamp.
+		</constant>
+		<constant name="MONITOR_TRIANGLE_COUNT" value="5" enum="Monitor">
+			How many triangles every field's extracted mesh holds together. Published as [code]voxel/triangles[/code].
+		</constant>
+		<constant name="MONITOR_MAX" value="6" enum="Monitor">
+			Represents the size of the [enum Monitor] enum.
+		</constant>
+	</constants>
 </class>

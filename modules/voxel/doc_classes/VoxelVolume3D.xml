@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelVolume3D" inherits="GeometryInstance3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Puts a [VoxelField] in a scene, drawing what it holds and optionally colliding with it.
+	</brief_description>
+	<description>
+		A [VoxelVolume3D] draws the mesh a [VoxelField] extracts, and moves it with the node. Assign a field to [member field] and whatever is stamped into that field appears here, re-extracted as it changes with nothing to call in between.
+		The node's transform positions the volume in the world; it does not reach inside the field. Positions passed to the field stay in the field's own space, so a volume can be moved, rotated, or reparented at any time without invalidating a single coordinate a caller is holding.
+		Turn on [member collision_enabled] to have the volume keep a static collision body in step with the field. One field may be shared by several volumes, which is how the same carved object is drawn twice without extracting it twice.
+		[codeblock]
+		var volume := VoxelVolume3D.new()
+		volume.field = my_field
+		volume.collision_enabled = true
+		volume.set_surface_override_material(0, my_material)
+		add_child(volume)
+		[/codeblock]
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_collision_shape" qualifiers="const">
+			<return type="VoxelShape3D" />
+			<description>
+				Returns the [VoxelShape3D] the volume keeps while [member collision_enabled] is on, or [code]null[/code] otherwise. The shape is managed by the volume; it is exposed for inspection and for drawing debug geometry, not to be swapped out.
+			</description>
+		</method>
+		<method name="get_surface_override_material" qualifiers="const">
+			<return type="Material" />
+			<param index="0" name="surface" type="int" />
+			<description>
+				Returns the material assigned to one surface, or [code]null[/code] if that surface has none.
+			</description>
+		</method>
+		<method name="get_surface_override_material_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many surfaces the field currently extracts, which is one per material ID present in it. This grows on its own when a cut exposes a material that was not visible before.
+			</description>
+		</method>
+		<method name="set_surface_override_material">
+			<return type="void" />
+			<param index="0" name="surface" type="int" />
+			<param index="1" name="material" type="Material" />
+			<description>
+				Assigns a [Material] to one of the field's surfaces. Surface indices follow the material IDs present in the field, so surface [code]0[/code] is the lowest ID in use.
+				Assignments are kept across re-extraction and across a surface count that changes, so a material can be set for a surface a cut has not yet exposed and it will be there when the cut exposes it.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="collision_enabled" type="bool" setter="set_generate_collision" getter="is_generating_collision" default="false">
+			If [code]true[/code], the volume keeps a static collision body matching the field's surface, re-extracted as the field changes. Off by default, because collision is the more expensive half of a stamp and plenty of volumes are only ever looked at.
+		</member>
+		<member name="collision_layer" type="int" setter="set_collision_layer" getter="get_collision_layer" default="1">
+			The physics layers this volume's collision body is in. See [member CollisionObject3D.collision_layer].
+		</member>
+		<member name="collision_mask" type="int" setter="set_collision_mask" getter="get_collision_mask" default="1">
+			The physics layers this volume's collision body scans. See [member CollisionObject3D.collision_mask].
+		</member>
+		<member name="collision_voxel_multiplier" type="int" setter="set_collision_voxel_multiplier" getter="get_collision_voxel_multiplier" default="4">
+			How many voxels wide one collision cell is, so [code]4[/code] builds collision at a quarter of the resolution the volume is drawn at. Raising it makes stamps cheaper and physics faster while letting collision round off detail that remains visible.
+			Defaults to [member ProjectSettings.voxel/collision/voxel_multiplier].
+		</member>
+		<member name="field" type="VoxelField" setter="set_field" getter="get_field">
+			The field this volume draws. Assigning one connects the volume to it, and any stamp into that field shows up here without the volume being told.
+			Several volumes may share one field. The field is not owned by the volume, so it outlives being unassigned.
+		</member>
+		<member name="lod_screen_error_pixels" type="float" setter="set_lod_screen_error_pixels" getter="get_lod_screen_error_pixels" default="2.0">
+			How far, in pixels on screen, a lower detail level may deviate from the full-resolution surface before the volume refuses it.
+			[b]Note:[/b] Accepted and stored, but nothing reads it yet: the volume always draws at full resolution. It is here so that scenes written now do not have to be revisited when levels of detail arrive.
+		</member>
+	</members>
+</class>

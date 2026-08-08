@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelShape3D" inherits="Shape3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A collision shape that follows a [VoxelField] as it is carved.
+	</brief_description>
+	<description>
+		A [VoxelShape3D] is a concave polygon collision shape whose faces come from a [VoxelField], rebuilt whenever the field changes. Assign it to a [CollisionShape3D] to have physics see a solid that is being carved, without anything having to rebuild the shape by hand after every cut.
+		Faces are extracted at the coarser resolution set by [member voxel_multiplier] rather than at the field's full resolution. Physics does not benefit from detail below the size of the things colliding with it, and paying for that detail is what makes a stamp miss its frame.
+		Like every concave shape, this one is hollow and one-sided: it works for a static body, and a [RigidBody3D] cannot use it. For volumes that move, keep the voxel field for what is being carved and give the mover a convex shape.
+		[b]Note:[/b] [VoxelVolume3D] creates and maintains one of these for you when [member VoxelVolume3D.collision_enabled] is on. Construct one directly only when the collider has to live somewhere other than on the volume.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_faces" qualifiers="const">
+			<return type="PackedVector3Array" />
+			<description>
+				Returns the triangles currently making up the shape, three vertices per face, in the field's space. This is what was handed to the physics engine, so it is the geometry to inspect when a collision does not match what is drawn.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="field" type="VoxelField" setter="set_field" getter="get_field">
+			The field the shape's faces are extracted from. The shape follows the field from then on, rebuilding when it is stamped into and when its bounds change.
+		</member>
+		<member name="voxel_multiplier" type="int" setter="set_voxel_multiplier" getter="get_voxel_multiplier" default="4">
+			How many voxels wide one collision cell is. At [code]1[/code] the shape matches the rendered surface exactly and costs the most to extract and to test against; at [code]4[/code] it costs roughly a sixty-fourth as many faces while rounding off detail a player can still see.
+			Defaults to [member ProjectSettings.voxel/collision/voxel_multiplier].
+		</member>
+	</members>
+</class>

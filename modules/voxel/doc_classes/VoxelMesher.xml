@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="VoxelMesher" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Base class for the algorithms that turn a [VoxelField] into triangles.
+	</brief_description>
+	<description>
+		A [VoxelMesher] is the step between a field of distance samples and a mesh that can be drawn. Assign one to [member VoxelField.mesher] and the field extracts with it from then on.
+		Which algorithm a field uses is a property of the field rather than something fixed when it was built, so a mesher can be swapped at runtime and the field re-extracts with the new one. That is what lets a project trade smoothness against extraction cost per object, and it is why this is a [Resource] and not a mode flag.
+		This class is abstract. Use [VoxelMesherMarchingCubes].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_algorithm_name" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the name of the algorithm this mesher implements, for display and for logging which one a field ended up extracting with.
+			</description>
+		</method>
+	</methods>
+</class>
