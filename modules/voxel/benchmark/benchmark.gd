@@ -21,6 +21,13 @@ const TOOL_RADIUS := 0.012
 
 const SEED := 0x5D0CE5
 
+# The workload is run this many times and the best run is the one reported. A
+# single run measures the machine as much as the code: on the machine this was
+# written on, repeated runs of identical code varied by more than 70%, which is
+# far more than any change worth detecting. Taking the minimum is the standard
+# defence, because interference can only ever make a run slower, never faster.
+const REPEATS := 5
+
 
 class Sample:
 	var wall_usec: int
@@ -30,33 +37,76 @@ class Sample:
 	var dirty_chunks: float
 
 
+class Run:
+	var samples: Array[Sample] = []
+	var collision_usec: int
+	var collision_faces: int
+	var triangles: int
+	var surfaces: int
+	var volume_fraction: float
+	var cpu_mib: float
+	var stroke_times: Array[float] = []
+
+	func stroke_median() -> float:
+		return stroke_times[stroke_times.size() / 2]
+
+
 func _ready() -> void:
 	_report_environment()
 
+	var runs: Array[Run] = []
+	for attempt in REPEATS:
+		runs.append(_run_workload(attempt))
+
+	# The fastest run is the one least interfered with, so it is the one that says
+	# something about the code rather than about what else the machine was doing.
+	var best: Run = runs[0]
+	for run in runs:
+		if run.stroke_median() < best.stroke_median():
+			best = run
+
+	_report_per_stroke(best)
+	_report(best, runs)
+	quit_with_success()
+
+
+func _run_workload(p_attempt: int) -> Run:
 	var field := VoxelField.new()
 	field.bounds = BOUNDS
 	field.voxel_size = VOXEL_SIZE
 
-	var samples: Array[Sample] = []
-	samples.append(_run_step("fill", field, _fill_workload))
+	var run := Run.new()
+	run.samples.append(_measure(field, _fill_workload))
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = SEED
 	for index in STROKE_COUNT:
 		var path := _make_stroke(rng)
-		samples.append(_run_step("stroke %2d" % (index + 1), field, func(f: VoxelField) -> void:
+		var sample := _measure(field, func(f: VoxelField) -> void:
 			var tool_tip := VoxelBrushSphere.new()
 			tool_tip.radius = TOOL_RADIUS
-			f.stamp_path(tool_tip, path, VoxelField.OP_SUBTRACT)))
+			f.stamp_path(tool_tip, path, VoxelField.OP_SUBTRACT))
+		run.samples.append(sample)
+		run.stroke_times.append(sample.wall_usec / 1000.0)
 
 	# Collision is the other half of the cost of an edit, and it is easy to forget
 	# because nothing renders it. Measure it separately so it cannot hide.
 	var collision_start := Time.get_ticks_usec()
 	var faces := field.get_collision_faces()
-	var collision_usec := Time.get_ticks_usec() - collision_start
+	run.collision_usec = Time.get_ticks_usec() - collision_start
+	run.collision_faces = faces.size() / 3
 
-	_report(samples, field, faces.size() / 3, collision_usec)
-	quit_with_success()
+	run.triangles = field.get_triangle_count()
+	run.surfaces = field.get_surface_count()
+	run.volume_fraction = field.get_volume() / (BOUNDS.size.x * BOUNDS.size.y * BOUNDS.size.z)
+	# Read while the field is still alive. The run's field is freed when this
+	# function returns, and the monitor is a live total rather than a high water
+	# mark, so reading it from the report would only ever say zero.
+	run.cpu_mib = VoxelServer.get_monitor(VoxelServer.MONITOR_CPU_BYTES) / 1048576.0
+
+	run.stroke_times.sort()
+	print("  run %d of %d: stroke median %.2f ms" % [p_attempt + 1, REPEATS, run.stroke_median()])
+	return run
 
 
 func _fill_workload(p_field: VoxelField) -> void:
@@ -86,7 +136,7 @@ func _make_stroke(p_rng: RandomNumberGenerator) -> PackedVector3Array:
 	return path
 
 
-func _run_step(p_label: String, p_field: VoxelField, p_workload: Callable) -> Sample:
+func _measure(p_field: VoxelField, p_workload: Callable) -> Sample:
 	var start := Time.get_ticks_usec()
 	p_workload.call(p_field)
 
@@ -105,15 +155,21 @@ func _run_step(p_label: String, p_field: VoxelField, p_workload: Callable) -> Sa
 	sample.extract_usec = VoxelServer.get_monitor(VoxelServer.MONITOR_EXTRACT_USEC)
 	sample.triangles = triangles
 	sample.dirty_chunks = dirty
-
-	print("  %-10s %8.2f ms   stamp %7.2f ms   extract %7.2f ms   regions %5d   tris %7d" % [
-			p_label,
-			sample.wall_usec / 1000.0,
-			sample.stamp_usec / 1000.0,
-			sample.extract_usec / 1000.0,
-			int(sample.dirty_chunks),
-			int(sample.triangles)])
 	return sample
+
+
+func _report_per_stroke(p_run: Run) -> void:
+	print("")
+	print("Best run, stroke by stroke")
+	for index in p_run.samples.size():
+		var sample: Sample = p_run.samples[index]
+		print("  %-10s %8.2f ms   stamp %7.2f ms   extract %7.2f ms   regions %5d   tris %7d" % [
+				"fill" if index == 0 else "stroke %2d" % index,
+				sample.wall_usec / 1000.0,
+				sample.stamp_usec / 1000.0,
+				sample.extract_usec / 1000.0,
+				int(sample.dirty_chunks),
+				int(sample.triangles)])
 
 
 func _report_environment() -> void:
@@ -135,39 +191,48 @@ func _report_environment() -> void:
 	print("")
 
 
-func _report(p_samples: Array[Sample], p_field: VoxelField, p_collision_faces: int, p_collision_usec: int) -> void:
+func _report(p_best: Run, p_runs: Array[Run]) -> void:
 	# The fill is a whole-volume write and is nothing like a stroke, so averaging it
 	# in would flatter or ruin the stroke number depending on the field size. Report
 	# it on its own and take statistics over the strokes only.
-	var strokes := p_samples.slice(1)
-	var times: Array[float] = []
-	for sample in strokes:
-		times.append(sample.wall_usec / 1000.0)
-	times.sort()
+	var times := p_best.stroke_times
 
 	var total := 0.0
 	for time in times:
 		total += time
 
+	# How far apart the runs were is not a footnote: it is the number that says
+	# whether the figure below can be trusted to a few percent or only to a factor.
+	var slowest_run := p_best.stroke_median()
+	for run in p_runs:
+		slowest_run = maxf(slowest_run, run.stroke_median())
+	var spread := (slowest_run / p_best.stroke_median() - 1.0) * 100.0
+
 	print("")
-	print("Summary")
-	print("  fill              %8.2f ms" % (p_samples[0].wall_usec / 1000.0))
+	print("Summary of the best of %d runs" % p_runs.size())
+	print("  fill              %8.2f ms" % (p_best.samples[0].wall_usec / 1000.0))
 	print("  stroke mean       %8.2f ms" % (total / times.size()))
-	print("  stroke median     %8.2f ms" % times[times.size() / 2])
+	print("  stroke median     %8.2f ms" % p_best.stroke_median())
 	print("  stroke worst      %8.2f ms" % times[times.size() - 1])
-	print("  collision pass    %8.2f ms for %d faces" % [p_collision_usec / 1000.0, p_collision_faces])
-	print("  cpu memory        %8.2f MiB" % (VoxelServer.get_monitor(VoxelServer.MONITOR_CPU_BYTES) / 1048576.0))
-	print("  final triangles   %8d across %d surfaces" % [p_field.get_triangle_count(), p_field.get_surface_count()])
-	print("  remaining volume  %8.2f %% of the block" % (p_field.get_volume() / (BOUNDS.size.x * BOUNDS.size.y * BOUNDS.size.z) * 100.0))
+	print("  collision pass    %8.2f ms for %d faces" % [p_best.collision_usec / 1000.0, p_best.collision_faces])
+	print("  cpu memory        %8.2f MiB" % p_best.cpu_mib)
+	print("  final triangles   %8d across %d surfaces" % [p_best.triangles, p_best.surfaces])
+	print("  remaining volume  %8.2f %% of the block" % (p_best.volume_fraction * 100.0))
+	print("  run spread        %8.1f %% between fastest and slowest run" % spread)
+	if spread > 25.0:
+		print("")
+		print("  This machine varied by more than a quarter across identical runs, so treat")
+		print("  the figure below as an upper bound and do not read small differences into it.")
 	print("")
 	# One line to record as the baseline, so two runs can be diffed by eye.
-	print("BASELINE build=%s stroke_median_ms=%.2f stroke_worst_ms=%.2f fill_ms=%.2f cpu_mib=%.2f triangles=%d" % [
+	print("BASELINE build=%s stroke_median_ms=%.2f stroke_worst_ms=%.2f fill_ms=%.2f cpu_mib=%.2f triangles=%d spread_pct=%.1f" % [
 			OS.get_executable_path().get_file(),
-			times[times.size() / 2],
+			p_best.stroke_median(),
 			times[times.size() - 1],
-			p_samples[0].wall_usec / 1000.0,
-			VoxelServer.get_monitor(VoxelServer.MONITOR_CPU_BYTES) / 1048576.0,
-			p_field.get_triangle_count()])
+			p_best.samples[0].wall_usec / 1000.0,
+			p_best.cpu_mib,
+			p_best.triangles,
+			spread])
 
 
 func quit_with_success() -> void:
