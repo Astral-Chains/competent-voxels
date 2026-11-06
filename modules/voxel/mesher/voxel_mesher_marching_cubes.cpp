@@ -36,10 +36,6 @@
 
 namespace {
 
-// Central differences on the sample grid, clamped at the boundary. Cheaper than
-// differencing the trilinear interpolant and, because it is evaluated at grid
-// samples and then interpolated along the edge, it agrees exactly between two
-// chunks that share that edge.
 Vector3 sample_gradient(const VoxelDenseStorage &p_storage, const Vector3i &p_sample, int p_step) {
 	const Vector3i res = p_storage.get_sample_resolution();
 	const float *sdf = p_storage.get_sdf_ptr();
@@ -60,8 +56,6 @@ Vector3 sample_gradient(const VoxelDenseStorage &p_storage, const Vector3i &p_sa
 	return gradient.normalized();
 }
 
-// Identifies a grid edge globally rather than per cell, so that the two cells
-// sharing an edge also share its vertex.
 _FORCE_INLINE_ uint64_t edge_key(const Vector3i &p_lower_sample, int p_axis) {
 	return ((uint64_t)p_lower_sample.x) |
 			((uint64_t)p_lower_sample.y << 20) |
@@ -79,7 +73,6 @@ void VoxelMesherMarchingCubes::build(const VoxelDenseStorage &p_storage, const I
 	const int step = MAX(p_input.step, 1);
 	const Vector3i cell_res = p_storage.get_cell_resolution();
 	const float *sdf = p_storage.get_sdf_ptr();
-	const float voxel_size = p_storage.get_voxel_size();
 
 	const int channel_count = p_storage.get_channel_count();
 	const int material_channel = channel_count > (int)VoxelChannels::MATERIAL_ID_CHANNEL
@@ -92,18 +85,21 @@ void VoxelMesherMarchingCubes::build(const VoxelDenseStorage &p_storage, const I
 			MIN(p_input.cell_origin.y + p_input.cell_size.y, cell_res.y),
 			MIN(p_input.cell_origin.z + p_input.cell_size.z, cell_res.z));
 
-	// Vertex index per grid edge, per material. Two materials meeting at an edge
-	// each need their own copy, because they end up in different surfaces.
-	HashMap<uint32_t, HashMap<uint64_t, int32_t>> edge_vertices;
+	// One geometric isosurface, one vertex cache, one output surface. A vertex lives
+	// on a grid edge; its material is the higher ID of the two endpoints. The solid
+	// endpoint of a shallow ADD is still the old block, which painted the camera-
+	// facing cap tan and looked like a hole through the new material.
+	Surface &surface = r_output.surfaces.insert(0, Surface())->value;
+	HashMap<uint64_t, int32_t> edge_vertices;
+	Vector<Color> &colors = surface.colors;
+	const VoxelChannel *materials = material_channel >= 0 ? &p_storage.get_channel(material_channel) : nullptr;
 
 	for (int z = begin.z; z < end.z; z += step) {
 		for (int y = begin.y; y < end.y; y += step) {
 			for (int x = begin.x; x < end.x; x += step) {
 				Vector3i corner_samples[8];
-				float corner_values[8];
+				float corner_sdf[8];
 				int case_index = 0;
-				float deepest = 0.0f;
-				int deepest_corner = -1;
 
 				for (int c = 0; c < 8; c++) {
 					const Vector3i sample(
@@ -111,39 +107,14 @@ void VoxelMesherMarchingCubes::build(const VoxelDenseStorage &p_storage, const I
 							MIN(y + MarchingCubes::CORNER_OFFSET[c][1] * step, cell_res.y),
 							MIN(z + MarchingCubes::CORNER_OFFSET[c][2] * step, cell_res.z));
 					corner_samples[c] = sample;
-					const float value = sdf[p_storage.sample_index(sample.x, sample.y, sample.z)];
-					corner_values[c] = value;
-					if (value < 0.0f) {
+					corner_sdf[c] = sdf[p_storage.sample_index(sample.x, sample.y, sample.z)];
+					if (corner_sdf[c] < 0.0f) {
 						case_index |= 1 << c;
-						if (deepest_corner < 0 || value < deepest) {
-							deepest = value;
-							deepest_corner = c;
-						}
 					}
 				}
 
 				if (case_index == 0 || case_index == 255) {
 					continue;
-				}
-
-				// The cell belongs to the material of the corner furthest inside the
-				// solid, which is stable under small changes to the field and does not
-				// flicker as a surface moves across the cell.
-				uint32_t material_id = VoxelChannels::MATERIAL_ID_INTERIOR;
-				if (material_channel >= 0 && deepest_corner >= 0) {
-					const Vector3i &sample = corner_samples[deepest_corner];
-					material_id = p_storage.get_channel(material_channel).get_raw((uint64_t)p_storage.sample_index(sample.x, sample.y, sample.z));
-				}
-
-				// HashMap allocates its elements individually, so these stay valid as
-				// more materials appear in later cells.
-				Surface *surface = r_output.surfaces.getptr(material_id);
-				if (!surface) {
-					surface = &r_output.surfaces.insert(material_id, Surface())->value;
-				}
-				HashMap<uint64_t, int32_t> *vertex_cache = edge_vertices.getptr(material_id);
-				if (!vertex_cache) {
-					vertex_cache = &edge_vertices.insert(material_id, HashMap<uint64_t, int32_t>())->value;
 				}
 
 				const int8_t *row = MarchingCubes::TRI_TABLE[case_index];
@@ -157,23 +128,16 @@ void VoxelMesherMarchingCubes::build(const VoxelDenseStorage &p_storage, const I
 						const Vector3i &sa = corner_samples[ca];
 						const Vector3i &sb = corner_samples[cb];
 
-						// Always interpolate from the lower sample to the upper one, never in
-						// whichever order this cell's edge numbering happened to give. Two cells
-						// sharing an edge reach it through different edge indices, and
-						// lerp(a, b, t) is not bit-identical to lerp(b, a, 1 - t), so ordering by
-						// the edge itself is what keeps the two chunks' vertices at exactly the
-						// same position and the surface therefore closed.
 						const Vector3i s_lo(MIN(sa.x, sb.x), MIN(sa.y, sb.y), MIN(sa.z, sb.z));
 						const Vector3i s_hi(MAX(sa.x, sb.x), MAX(sa.y, sb.y), MAX(sa.z, sb.z));
 						if (s_lo == s_hi) {
-							// Collapsed by boundary clamping, so this edge has no crossing.
 							triangle[v] = -1;
 							break;
 						}
 						const int axis = s_lo.x != s_hi.x ? 0 : (s_lo.y != s_hi.y ? 1 : 2);
 						const uint64_t key = edge_key(s_lo, axis);
 
-						if (const int32_t *cached = vertex_cache->getptr(key)) {
+						if (const int32_t *cached = edge_vertices.getptr(key)) {
 							triangle[v] = *cached;
 							continue;
 						}
@@ -198,9 +162,17 @@ void VoxelMesherMarchingCubes::build(const VoxelDenseStorage &p_storage, const I
 							normal.normalize();
 						}
 
-						const int32_t index = surface->vertices.size();
-						surface->vertices.push_back(position);
-						surface->normals.push_back(normal);
+						uint32_t edge_material = VoxelChannels::MATERIAL_ID_INTERIOR;
+						if (materials) {
+							const uint32_t mat_lo = materials->get_raw((uint64_t)p_storage.sample_index(s_lo.x, s_lo.y, s_lo.z));
+							const uint32_t mat_hi = materials->get_raw((uint64_t)p_storage.sample_index(s_hi.x, s_hi.y, s_hi.z));
+							edge_material = MAX(mat_lo, mat_hi);
+						}
+
+						const int32_t index = surface.vertices.size();
+						surface.vertices.push_back(position);
+						surface.normals.push_back(normal);
+						colors.push_back(Color(float(edge_material) / 255.0f, 0.0f, 0.0f, 1.0f));
 
 						if (p_input.with_channels) {
 							for (uint32_t ch = 0; ch < VoxelChannels::CUSTOM0_CHANNEL_COUNT; ch++) {
@@ -212,11 +184,11 @@ void VoxelMesherMarchingCubes::build(const VoxelDenseStorage &p_storage, const I
 									const float b = data.get_normalized((uint64_t)p_storage.sample_index(s_hi.x, s_hi.y, s_hi.z));
 									packed = (uint8_t)CLAMP(Math::round(Math::lerp(a, b, t_edge) * 255.0f), 0.0f, 255.0f);
 								}
-								surface->custom0.push_back(packed);
+								surface.custom0.push_back(packed);
 							}
 						}
 
-						vertex_cache->insert(key, index);
+						edge_vertices.insert(key, index);
 						triangle[v] = index;
 					}
 
@@ -227,12 +199,9 @@ void VoxelMesherMarchingCubes::build(const VoxelDenseStorage &p_storage, const I
 						continue;
 					}
 
-					// Reversed relative to the table, because Godot treats clockwise
-					// winding as front facing while the table is written for
-					// counter-clockwise.
-					surface->indices.push_back(triangle[0]);
-					surface->indices.push_back(triangle[2]);
-					surface->indices.push_back(triangle[1]);
+					surface.indices.push_back(triangle[0]);
+					surface.indices.push_back(triangle[2]);
+					surface.indices.push_back(triangle[1]);
 					r_output.triangle_count++;
 				}
 			}

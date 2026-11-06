@@ -131,6 +131,40 @@ static int count_boundary_and_nonmanifold_edges(const MeshData &p_mesh, int &r_b
 	return r_boundary + r_nonmanifold;
 }
 
+// Same check keyed by vertex index. Position welding can report a closed surface while
+// the uploaded index buffer still has cracks; this is what the GPU actually draws.
+static int count_index_boundary_edges(const MeshData &p_mesh, int &r_boundary, int &r_nonmanifold, int &r_total) {
+	HashMap<uint64_t, int> edge_uses;
+	const int32_t *indices = p_mesh.indices.ptr();
+
+	for (int i = 0; i < p_mesh.indices.size(); i += 3) {
+		for (int e = 0; e < 3; e++) {
+			const int32_t ia = indices[i + e];
+			const int32_t ib = indices[i + (e + 1) % 3];
+			const uint64_t a = (uint64_t)MIN(ia, ib);
+			const uint64_t b = (uint64_t)MAX(ia, ib);
+			const uint64_t key = (a << 32) | b;
+			if (int *count = edge_uses.getptr(key)) {
+				(*count)++;
+			} else {
+				edge_uses.insert(key, 1);
+			}
+		}
+	}
+
+	r_boundary = 0;
+	r_nonmanifold = 0;
+	r_total = edge_uses.size();
+	for (const KeyValue<uint64_t, int> &pair : edge_uses) {
+		if (pair.value < 2) {
+			r_boundary++;
+		} else if (pair.value > 2) {
+			r_nonmanifold++;
+		}
+	}
+	return r_boundary + r_nonmanifold;
+}
+
 // This is the test that actually validates mc_tables.h. Any single wrong entry in
 // the 256-row triangulation table tears a hole in the surface, and a hole is an edge
 // that only one triangle uses. It is also what a mistake in stitching one chunk's
@@ -150,6 +184,102 @@ TEST_CASE("[Voxel] Marching cubes produces a closed surface") {
 
 	CHECK_MESSAGE(boundary == 0, vformat("%d of %d surface edges are used by a single triangle, so the surface has holes.", boundary, total));
 	CHECK_MESSAGE(nonmanifold == 0, vformat("%d of %d surface edges are used by more than two triangles.", nonmanifold, total));
+}
+
+// Splitting the isosurface into one draw call per material leaves each surface open
+// at paint boundaries. Welding everything into one surface must keep the manifold
+// closed after a multi-material union.
+TEST_CASE("[Voxel] Multi-material union keeps a single closed surface") {
+	Ref<VoxelField> field;
+	field.instantiate();
+	field->set_bounds(AABB(Vector3(-0.25, -0.25, -0.25), Vector3(0.5, 0.5, 0.5)));
+	field->set_voxel_size(0.01f);
+
+	Ref<VoxelBrushBox> block;
+	block.instantiate();
+	block->set_size(Vector3(0.3, 0.3, 0.3));
+	block->set_material_id(1);
+	field->stamp(block, Transform3D(), VoxelField::OP_UNION);
+
+	Ref<VoxelBrushSphere> bump;
+	bump.instantiate();
+	bump->set_radius(0.06f);
+	bump->set_material_id(2);
+	Transform3D bump_xform;
+	bump_xform.origin = Vector3(0.0f, 0.15f + 0.03f, 0.0f);
+	field->stamp(bump, bump_xform, VoxelField::OP_UNION);
+
+	REQUIRE(field->get_surface_count() == 1);
+	const MeshData mesh = read_surface(field, 0);
+	REQUIRE(mesh.indices.size() > 0);
+	int boundary = 0;
+	int nonmanifold = 0;
+	int total = 0;
+	count_boundary_and_nonmanifold_edges(mesh, boundary, nonmanifold, total);
+	CHECK_MESSAGE(boundary == 0,
+			vformat("Welded multi-material surface has %d boundary edges of %d.", boundary, total));
+
+	int index_boundary = 0;
+	int index_nonmanifold = 0;
+	int index_total = 0;
+	count_index_boundary_edges(mesh, index_boundary, index_nonmanifold, index_total);
+	CHECK_MESSAGE(index_boundary == 0,
+			vformat("Index buffer still has %d open edges of %d after multi-material weld.", index_boundary, index_total));
+
+	// Paint must cover the bump, not a thin ribbon. Vertex colour comes from the solid
+	// side of each edge; a shallow ADD used to keep deepest-corner colour on mat 1 and
+	// only tint a hollow-looking ring of mat 2.
+	const Array arrays = field->get_surface_arrays(0);
+	const PackedColorArray colors = arrays[Mesh::ARRAY_COLOR];
+	const PackedVector3Array vertices = arrays[Mesh::ARRAY_VERTEX];
+	const PackedInt32Array indices = arrays[Mesh::ARRAY_INDEX];
+	REQUIRE(colors.size() == vertices.size());
+	int green_near_bump = 0;
+	int tris_near_bump = 0;
+	const Vector3 bump_centre = bump_xform.origin;
+	for (int i = 0; i < indices.size(); i += 3) {
+		const Vector3 centre = (vertices[indices[i]] + vertices[indices[i + 1]] + vertices[indices[i + 2]]) / 3.0f;
+		if (centre.distance_to(bump_centre) > 0.08f) {
+			continue;
+		}
+		tris_near_bump++;
+		const float avg_mat = (colors[indices[i]].r + colors[indices[i + 1]].r + colors[indices[i + 2]].r) * 255.0f / 3.0f;
+		if (avg_mat >= 1.5f) {
+			green_near_bump++;
+		}
+	}
+	REQUIRE(tris_near_bump > 0);
+	CHECK_MESSAGE(green_near_bump * 5 > tris_near_bump * 4,
+			vformat("Only %d of %d triangles near the ADD bump are material 2 — paint looks like a hollow shell.", green_near_bump, tris_near_bump));
+
+	// The cap that faces the camera is the empty hole. Every vertex on those
+	// triangles must be material 2; one leftover mat-1 rim vertex plus `flat`
+	// interpolation paints the whole front tan.
+	int cap_tris = 0;
+	int cap_all_green = 0;
+	const float cap_height = bump_centre.y + 0.02f;
+	for (int i = 0; i < indices.size(); i += 3) {
+		const Vector3 a = vertices[indices[i]];
+		const Vector3 b = vertices[indices[i + 1]];
+		const Vector3 c = vertices[indices[i + 2]];
+		const Vector3 centre = (a + b + c) / 3.0f;
+		if (centre.y < cap_height) {
+			continue;
+		}
+		if (centre.distance_to(bump_centre) > 0.07f) {
+			continue;
+		}
+		cap_tris++;
+		const uint32_t m0 = (uint32_t)Math::round(colors[indices[i]].r * 255.0f);
+		const uint32_t m1 = (uint32_t)Math::round(colors[indices[i + 1]].r * 255.0f);
+		const uint32_t m2 = (uint32_t)Math::round(colors[indices[i + 2]].r * 255.0f);
+		if (m0 >= 2 && m1 >= 2 && m2 >= 2) {
+			cap_all_green++;
+		}
+	}
+	REQUIRE(cap_tris > 0);
+	CHECK_MESSAGE(cap_all_green == cap_tris,
+			vformat("%d of %d camera-facing cap triangles still have a material-1 vertex.", cap_tris - cap_all_green, cap_tris));
 }
 
 // Marching cubes promises a closed surface, not a manifold one. When the field ties

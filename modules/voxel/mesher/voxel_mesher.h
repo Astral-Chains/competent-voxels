@@ -48,18 +48,20 @@ protected:
 	static void _bind_methods();
 
 public:
-	// Triangles for a single material ID within a single region.
+	// Triangles for one extracted region. Material ID is carried in vertex colour
+	// (R = id/255) on a single shared isosurface so multi-material solids stay sealed.
 	struct Surface {
 		Vector<Vector3> vertices;
 		Vector<Vector3> normals;
+		Vector<Color> colors;
 		// Channels 1 through 4 packed as RGBA8, read by the shader as CUSTOM0.
 		Vector<uint8_t> custom0;
 		Vector<int32_t> indices;
 	};
 
 	struct Output {
-		// Keyed by material ID, so grouping cells by material falls out of
-		// extraction instead of needing a separate pass over the result.
+		// Phase 1 writes a single surface at key 0. The map remains so a later
+		// mesher can still group by material if it chooses to.
 		HashMap<uint32_t, Surface> surfaces;
 		uint32_t triangle_count = 0;
 	};

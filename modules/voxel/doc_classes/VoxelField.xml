@@ -109,7 +109,7 @@
 		<method name="get_surface_count" qualifiers="const">
 			<return type="int" />
 			<description>
-				Returns how many surfaces the extracted mesh has. There is one surface per material ID present in the field, so a solid carved to expose a second material grows a second surface on its own, and each can be given its own [Material] through [method VoxelVolume3D.set_surface_override_material].
+				Returns how many surfaces the extracted mesh has. The mesh is a single welded surface with material IDs packed into vertex colour, so multi-material solids stay watertight. A [ShaderMaterial] (or any material that reads vertex colour) can still distinguish paints; [method VoxelVolume3D.set_surface_override_material] applies to surface 0.
 			</description>
 		</method>
 		<method name="get_triangle_count" qualifiers="const">

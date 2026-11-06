@@ -57,9 +57,10 @@ namespace VoxelChannels {
 uint32_t get_format_byte_size(VoxelChannelFormat p_format);
 uint32_t get_format_max_value(VoxelChannelFormat p_format);
 
-// Channel 0 of every field is the material ID. Extraction groups cells by it and
-// emits one mesh surface per distinct value present, which is what lets a cut
-// face carry a different material from the surface it was cut out of.
+// Channel 0 of every field is the material ID. Extraction tags each isosurface
+// triangle with it and packs the ID into vertex colour on a single welded mesh
+// surface, so a multi-material solid stays watertight while a shader can still
+// show the paint.
 constexpr uint32_t MATERIAL_ID_CHANNEL = 0;
 constexpr uint32_t MATERIAL_ID_INTERIOR = 0;
 

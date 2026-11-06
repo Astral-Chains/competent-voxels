@@ -263,10 +263,11 @@ void VoxelServer::_stamp_once(Field *p_field, const Ref<VoxelBrush> &p_brush, co
 
 				switch (p_operation) {
 					case VOXEL_OP_UNION: {
-						if (distance < sdf[index]) {
+						const float old_sdf = sdf[index];
+						if (distance < old_sdf) {
 							sdf[index] = distance;
-						}
-						if (distance <= 0.0f) {
+							material.set_raw((uint64_t)index, brush_material);
+						} else if (distance <= 0.0f) {
 							material.set_raw((uint64_t)index, brush_material);
 						}
 					} break;
@@ -476,70 +477,90 @@ void VoxelServer::_rebuild_mesh(Field *p_field) {
 	p_field->mesh->clear_surfaces();
 	p_field->triangle_count = 0;
 
-	// Deterministic surface order, so that surface index zero means the same thing
-	// from one rebuild to the next.
-	LocalVector<uint32_t> material_ids;
+	// Weld every chunk into one index buffer by bit-identical position. Chunks already
+	// agree on shared-edge positions; welding turns that into shared indices so the GPU
+	// cannot open a rasterization crack into the hollow mesh interior. Vector3 is used
+	// as the key (hash + is_same) so 96 bits of float identity are never collapsed into
+	// a 64-bit fingerprint that could collide and corrupt seams.
+	Vector<Vector3> vertices;
+	Vector<Vector3> normals;
+	Vector<Color> colors;
+	Vector<uint8_t> custom0;
+	Vector<int32_t> indices;
+	HashMap<Vector3, int32_t> weld;
+
 	for (uint32_t i = 0; i < p_field->chunk_output.size(); i++) {
-		for (const KeyValue<uint32_t, VoxelMesher::Surface> &pair : p_field->chunk_output[i].surfaces) {
-			if (pair.value.indices.is_empty()) {
-				continue;
-			}
-			if (material_ids.find(pair.key) == -1) {
-				material_ids.push_back(pair.key);
-			}
-		}
 		p_field->triangle_count += p_field->chunk_output[i].triangle_count;
-	}
-	material_ids.sort();
-
-	for (uint32_t m = 0; m < material_ids.size(); m++) {
-		const uint32_t material_id = material_ids[m];
-
-		Vector<Vector3> vertices;
-		Vector<Vector3> normals;
-		Vector<uint8_t> custom0;
-		Vector<int32_t> indices;
-
-		for (uint32_t i = 0; i < p_field->chunk_output.size(); i++) {
-			const VoxelMesher::Surface *surface = p_field->chunk_output[i].surfaces.getptr(material_id);
-			if (!surface || surface->indices.is_empty()) {
+		for (const KeyValue<uint32_t, VoxelMesher::Surface> &pair : p_field->chunk_output[i].surfaces) {
+			const VoxelMesher::Surface &surface = pair.value;
+			if (surface.indices.is_empty()) {
 				continue;
 			}
-			const int32_t offset = vertices.size();
-			vertices.append_array(surface->vertices);
-			normals.append_array(surface->normals);
-			custom0.append_array(surface->custom0);
-			const int32_t *r = surface->indices.ptr();
-			const int count = surface->indices.size();
-			const int32_t base = indices.size();
-			indices.resize(base + count);
+
+			const Vector3 *src_vertices = surface.vertices.ptr();
+			const Vector3 *src_normals = surface.normals.ptr();
+			const Color *src_colors = surface.colors.ptr();
+			const uint8_t *src_custom0 = surface.custom0.ptr();
+			const bool has_colors = surface.colors.size() == surface.vertices.size();
+			const bool has_custom0 = surface.custom0.size() ==
+					surface.vertices.size() * (int)VoxelChannels::CUSTOM0_CHANNEL_COUNT;
+
+			LocalVector<int32_t> remap;
+			remap.resize(surface.vertices.size());
+			for (int v = 0; v < surface.vertices.size(); v++) {
+				const Vector3 &key = src_vertices[v];
+				if (const int32_t *dst = weld.getptr(key)) {
+					remap[v] = *dst;
+					if (has_colors && src_colors[v].r > colors[*dst].r) {
+						colors.write[*dst] = src_colors[v];
+					}
+					continue;
+				}
+				const int32_t dst = vertices.size();
+				vertices.push_back(key);
+				normals.push_back(src_normals[v]);
+				colors.push_back(has_colors ? src_colors[v] : Color(0, 0, 0, 1));
+				if (has_custom0) {
+					const int custom_base = v * (int)VoxelChannels::CUSTOM0_CHANNEL_COUNT;
+					for (uint32_t ch = 0; ch < VoxelChannels::CUSTOM0_CHANNEL_COUNT; ch++) {
+						custom0.push_back(src_custom0[custom_base + ch]);
+					}
+				}
+				weld.insert(key, dst);
+				remap[v] = dst;
+			}
+
+			const int32_t *src_indices = surface.indices.ptr();
+			const int base = indices.size();
+			indices.resize(base + surface.indices.size());
 			int32_t *w = indices.ptrw();
-			for (int k = 0; k < count; k++) {
-				w[base + k] = r[k] + offset;
+			for (int k = 0; k < surface.indices.size(); k++) {
+				w[base + k] = remap[src_indices[k]];
 			}
 		}
-
-		if (indices.is_empty()) {
-			continue;
-		}
-
-		Array arrays;
-		arrays.resize(Mesh::ARRAY_MAX);
-		arrays[Mesh::ARRAY_VERTEX] = vertices;
-		arrays[Mesh::ARRAY_NORMAL] = normals;
-		arrays[Mesh::ARRAY_INDEX] = indices;
-
-		uint64_t flags = 0;
-		if (custom0.size() == vertices.size() * (int)VoxelChannels::CUSTOM0_CHANNEL_COUNT) {
-			arrays[Mesh::ARRAY_CUSTOM0] = custom0;
-			flags |= (uint64_t)Mesh::ARRAY_CUSTOM_RGBA8_UNORM << Mesh::ARRAY_FORMAT_CUSTOM0_SHIFT;
-		}
-
-		// Deliberately not passing ARRAY_FLAG_COMPRESS_ATTRIBUTES. Getting the
-		// uncompressed layout visibly correct comes first; packing is a measured
-		// optimization, not a default.
-		p_field->mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, TypedArray<Array>(), Dictionary(), flags);
 	}
+
+	if (indices.is_empty()) {
+		return;
+	}
+
+	Array arrays;
+	arrays.resize(Mesh::ARRAY_MAX);
+	arrays[Mesh::ARRAY_VERTEX] = vertices;
+	arrays[Mesh::ARRAY_NORMAL] = normals;
+	arrays[Mesh::ARRAY_COLOR] = colors;
+	arrays[Mesh::ARRAY_INDEX] = indices;
+
+	uint64_t flags = 0;
+	if (custom0.size() == vertices.size() * (int)VoxelChannels::CUSTOM0_CHANNEL_COUNT) {
+		arrays[Mesh::ARRAY_CUSTOM0] = custom0;
+		flags |= (uint64_t)Mesh::ARRAY_CUSTOM_RGBA8_UNORM << Mesh::ARRAY_FORMAT_CUSTOM0_SHIFT;
+	}
+
+	// Deliberately not passing ARRAY_FLAG_COMPRESS_ATTRIBUTES. Getting the
+	// uncompressed layout visibly correct comes first; packing is a measured
+	// optimization, not a default.
+	p_field->mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, TypedArray<Array>(), Dictionary(), flags);
 }
 
 void VoxelServer::_rebuild_collision(Field *p_field, int p_step) {

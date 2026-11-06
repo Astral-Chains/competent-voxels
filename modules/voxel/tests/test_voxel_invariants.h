@@ -36,7 +36,9 @@
 #include "../voxel_server.h"
 
 #include "core/object/class_db.h"
+#include "core/templates/hash_map.h"
 #include "scene/resources/3d/primitive_meshes.h"
+#include "scene/resources/mesh.h"
 #include "tests/test_macros.h"
 
 // The seven invariants from the design document, as tests rather than as prose.
@@ -121,8 +123,9 @@ TEST_CASE("[Voxel][Invariant] No class or member names its application domain") 
 }
 
 // Invariant 2: a cut face can show a different material than the surface it was cut
-// out of, without a second mesh, a second node, or a shader trick.
-TEST_CASE("[Voxel][Invariant] Two material IDs produce two mesh surfaces") {
+// out of, without a second mesh, a second node, or a shader trick. Material IDs are
+// packed into vertex colour on one welded surface so the solid stays watertight.
+TEST_CASE("[Voxel][Invariant] Two material IDs are distinguishable on the mesh") {
 	Ref<VoxelField> field = make_field(0.01f);
 
 	field->stamp(make_sphere(0.15f, 1), Transform3D(), VoxelField::OP_UNION);
@@ -132,8 +135,17 @@ TEST_CASE("[Voxel][Invariant] Two material IDs produce two mesh surfaces") {
 	offset.origin = Vector3(0.12, 0, 0);
 	field->stamp(make_sphere(0.06f, 2), offset, VoxelField::OP_UNION);
 
-	CHECK_MESSAGE(field->get_surface_count() == 2,
-			vformat("Expected one surface per material ID present, got %d.", field->get_surface_count()));
+	REQUIRE(field->get_surface_count() == 1);
+	const Array arrays = field->get_surface_arrays(0);
+	const PackedColorArray colors = arrays[Mesh::ARRAY_COLOR];
+	REQUIRE(colors.size() > 0);
+
+	HashMap<uint32_t, bool> seen;
+	for (int i = 0; i < colors.size(); i++) {
+		seen[(uint32_t)Math::round(colors[i].r * 255.0f)] = true;
+	}
+	CHECK_MESSAGE(seen.has(1), "Expected vertex colours for material ID 1.");
+	CHECK_MESSAGE(seen.has(2), "Expected vertex colours for material ID 2.");
 }
 
 // Invariant 3: N fields, not one. This is the invariant most likely to be broken by
